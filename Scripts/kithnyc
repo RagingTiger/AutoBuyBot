@@ -1,0 +1,145 @@
+#!/usr/bin/env python3
+import requests
+import timeit
+from bs4 import BeautifulSoup as bs
+from getconf import *
+
+# TODO: keywords, paypal checkout method, login method
+
+"""
+Note:
+Shipping address and billing must be the same
+
+"""
+
+# User input
+use_early_link = True
+base_url = 'https://kithnyc.com'
+shop_url = 'https://shop.kithnyc.com'
+early_link = base_url + '/collections/footwear/products/asics-gel-lyte-iii-millionaires-row'
+use_keyword = False
+shoe_size = '4'
+
+
+# Functions
+def add_to_cart(early_link, shoe_size):
+	response = session.get(early_link, headers=headers)
+	soup = bs(response.text, 'html.parser')
+
+	available_sizes = []
+	size_ids = []
+	size_box = soup.find('select', {'id': 'variant-listbox'})
+
+	for options in size_box.find_all('option'):
+		available_sizes.append(options.text)
+		size_ids.append(options['value'])
+
+	if shoe_size in available_sizes:
+		pos = available_sizes.index(shoe_size)
+		id = size_ids[pos]
+		payload = {
+			'id': id,
+			'quantity': '1'
+		}
+		session.post(base_url + '/cart/add.js', data=payload, headers=headers)
+		return 1
+	else:
+		return 0
+
+
+def checkout():
+	response = session.get(base_url + '/cart', headers=headers)
+
+	response = session.get(base_url + '/checkout', headers=headers)
+
+	soup = bs(response.text, 'html.parser')
+	form = soup.find('form', {'class': 'edit_checkout'})
+
+	payload = {
+		'_method': 'patch',
+		'authenticity_token': form.find('input', {'name': 'authenticity_token'})['value'],
+		'button': '',
+		'checkout[client_details][browser_height]': '728',
+		'checkout[client_details][browser_width]': '1280',
+		'checkout[client_details][javascript_enabled]': '0',
+		'checkout[email]': email,
+		'checkout[shipping_address][address1]': shipping_address_1,
+		'checkout[shipping_address][address2]': '',
+		'checkout[shipping_address][city]': shipping_city,
+		'checkout[shipping_address][country]': shipping_country,
+		'checkout[shipping_address][first_name]': first_name,
+		'checkout[shipping_address][last_name]': last_name,
+		'checkout[shipping_address][phone]': phone_number,
+		'checkout[shipping_address][province]': ',,' + shipping_state,
+		'checkout[shipping_address][zip]': shipping_zip,
+		'previous_step': 'contact_information',
+		'remember_me': 'false',
+		'step': 'shipping_method',
+		'utf8': '✓'
+	}
+
+	response = session.post(shop_url + form['action'], data=payload, headers=headers)  # customer info
+
+	soup = bs(response.text, 'html.parser')
+	form = soup.find('form', {'class': 'edit_checkout'})
+
+	payload = {
+		'_method': 'patch',
+		'authenticity_token': form.find('input', {'name': 'authenticity_token'})['value'],
+		'button': '',
+		'checkout[client_details][browser_height]': '728',
+		'checkout[client_details][browser_width]': '1280',
+		'checkout[client_details][javascript_enabled]': '0',
+		'checkout[shipping_rate][id]': 'shopify-UPS%20GROUND%20(5-7%20business%20days)-10.00',
+		'previous_step': 'shipping_method',
+		'step': 'payment_method',
+		'utf8': '✓'
+	}
+
+	session.post(shop_url + form['action'], data=payload, headers=headers)  # shipping
+
+	response = session.get(shop_url + form['action'] + '?step=payment_method', headers=headers)  # payment
+
+	soup = bs(response.text, 'html.parser')
+	form = soup.find_all('form', {'class': 'edit_checkout'})[-1]
+
+	payload = {
+		'authenticity_token': form.find('input', {'name': 'authenticity_token'})['value'],
+		'c': form.find('input', {'name': 'c'})['value'],
+		'd': form.find('input', {'name': 'd'})['value'],
+		'checkout[buyer_accepts_marketing]': '0',
+		'checkout[client_details][browser_height]': '728',
+		'checkout[client_details][browser_width]': '1280',
+		'checkout[client_details][javascript_enabled]': '1',
+		'checkout[credit_card][month]': card_exp_month,
+		'checkout[credit_card][name]': first_name + ' ' + last_name,
+		'checkout[credit_card][number]': card_exp_month.strip('0'),
+		'checkout[credit_card][verification_value]': card_cvv,
+		'checkout[credit_card][year]': card_exp_year,
+		'checkout[different_billing_address]': 'false',
+		'checkout[payment_gateway]': form.find('input', {'name': 'checkout[payment_gateway]'})['value'],
+		'complete': '1',
+		'expiry': card_exp_month + '/' + card_exp_year[-2:],
+		'previous_step': 'payment_method',
+		's':'',
+		'step':'',
+		'utf8': '✓'
+	}
+	
+	response = session.post(form['action'], data=payload, headers=headers)  # payment
+
+
+# Main
+start = timeit.default_timer()
+session = requests.Session()
+headers = {
+	'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
+
+if use_early_link:
+	if add_to_cart(early_link, shoe_size):
+		checkout()
+	else:
+		print('Size ' + shoe_size + ' not available')
+
+stop = timeit.default_timer()
+print(stop - start)
